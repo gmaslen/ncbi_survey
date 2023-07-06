@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+* {
+  box-sizing: border-box;
+}
+
+#speciesInput {
+  background-position: 10px 10px;
+  background-repeat: no-repeat;
+  width: 20%;
+  font-size: 16px;
+  padding: 12px 20px 12px 40px;
+  border: 1px solid #ddd;
+  margin-bottom: 12px;
+}
+
+#categoryInput{
+  background-position: 10px 10px;
+  background-repeat: no-repeat;
+  width: 20%;
+  font-size: 16px;
+  padding: 12px 20px 12px 40px;
+  border: 1px solid #ddd;
+  margin-bottom: 12px;
+}
+
+#matchInput{
+  background-position: 10px 10px;
+  background-repeat: no-repeat;
+  width: 20%;
+  font-size: 16px;
+  padding: 12px 20px 12px 40px;
+  border: 1px solid #ddd;
+  margin-bottom: 12px;
+}
+
+#assemblyTable {
+  border-collapse: collapse;
+  width: 100%;
+  border: 1px solid #ddd;
+  font-size: 18px;
+}
+
+#assemblyTable th, #assemblyTable td {
+  text-align: left;
+  padding: 12px;
+}
+
+#assemblyTable tr {
+  border-bottom: 5px solid #ddd;
+}
+
+#assemblyTable tr.header, #assemblyTable tr:hover {
+  background-color: #f1f1f1;
+}
+
+#failureTable {
+  border-collapse: collapse;
+  width: 100%;
+  border: 1px solid #ddd;
+  font-size: 18px;
+}
+
+#failureTable th, #assemblyTable td {
+  text-align: left;
+  padding: 12px;
+}
+
+#failureTable tr {
+  border-bottom: 5px solid #ddd;
+}
+
+#failureTable tr.header, #assemblyTable tr:hover {
+  background-color: #f1f1f1;
+}
+
+</style>
+</head>
+<body>
+
+<h1>NCBI assembly match</h1>
+<h2>Table of retrieved records</h2>
+
+<p>To filter the results just start typing in the relevant search box</p>
+
+<input type="text" id="speciesInput" onkeyup="myFunction(2)" placeholder="Species.." title="Type in a species">
+
+<input type="text" id="categoryInput" onkeyup="myFunction(6, categoryInput)" placeholder="Category.." title="Type in an assembly category">
+
+<input type="text" id="matchInput" onkeyup="myFunction(9, matchInput)" placeholder="Match.." title="Type in an assembly match type">
+
+<table id="assemblyTable">
+<tr class="header">
+    <th style="width:10%;">Total assemblies</th>
+    <th style="width:10%;">NCBI accession</th>
+    <th style="width:10%;">VEuPath name</th>
+    <th style="width:10%;">VEuPath version</th>
+    <th style="width:10%;">VEuPath taxid</th>
+    <th style="width:10%;">NCBI taxid</th>
+    <th style="width:10%;">NCBI strain</th>
+    <th style="width:10%;">NCBI category</th>
+    <th style="width:10%;">NCBI assembly level</th>
+    <th style="width:10%;">NCBI total genes</th>
+    <th style="width:10%;">NCBI total proteins</th>
+    <th style="width:10%;">NCBI BUSCO stats</th>
+    <th style="width:10%;">NCBI source</th>
+    <th style="width:10%;">NCBI submitted</th>
+    <th style="width:10%;">NCBI match type</th>
+</tr>
+{% for rl in record%}
+    {% for r in rl %}
+    {% if r.ncbi_category == "representative genome"%}<tr bgcolor="#80dfff">{% else %}<tr>{% endif %}
+    
+        <td>{{r.num_assemblies}}</td>
+        <td><a href="https://www.ncbi.nlm.nih.gov/assembly/{{r.ncbi_accession}}">{{r.ncbi_accession}}</a></td>
+        <td>{{r.vp_name}}</td>
+        <td>{{r.vp_version}}</td>
+        <td><a href="https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id={{r.vp_taxid}}">{{r.vp_taxid}}</a></td>
+        <td><a href="https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id={{r.ncbi_taxid}}">{{r.ncbi_taxid}}</a></td>
+        <td>{{r.ncbi_strain}}</td>
+        <td>{{r.ncbi_category}}</td>
+        <td>{{r.ncbi_level}}</td>
+        <td>{{r.ncbi_genes}}</td>
+        <td>{{r.ncbi_proteins}}</td>
+        <td>{{r.ncbi_busco}}</td>
+        <td>{{r.ncbi_source}}</td>
+        <td>{{r.ncbi_submitted}}</td>
+    {% if r.ncbi_match == "matched reference assembly"%}<td bgcolor="#7fff00">{{r.ncbi_match}}</td>
+    {% elif r.ncbi_match == "matched non-reference assembly"%}<td bgcolor="#90ee90">{{r.ncbi_match}}</td>
+    {% elif r.ncbi_match.count('mismatch')%}<td bgcolor="#FF0000">{{r.ncbi_match}}</td>
+    {% else %}<td bgcolor="#FFFFFF">{{r.ncbi_match}}</td>
+    {% endif %}
+    </tr>
+    {% endfor %}
+{%endfor%}
+</table>
+<br>
+
+<h2>Table of failed records</h2>
+
+<table id="failureTable">
+  <tr class="header">
+      <th style="width:10%;">VEuPath name</th>
+      <th style="width:10%;">VEuPath accession</th>
+      <th style="width:10%;">VEuPath version</th>
+      <th style="width:10%;">VEuPath taxid</th>
+      <th style="width:10%;">VEuPath reference</th>
+      <th style="width:10%;">Failure reason</th>
+  </tr>
+  {% for f in failed_records%}
+      {% if f.reference == "yes"%}<tr bgcolor="#FF0000">{% else %}<tr>{% endif %}
+          <td>{{f.name}}</td>
+          <td><a href="https://www.ncbi.nlm.nih.gov/assembly/{{f.accession}}">{{f.accession}}</a></td>
+          <td>{{f.version}}</td>
+          <td>{{f.taxid}}</td>
+          <td>{{f.reference}}</td>
+          <td>No such accession exists at NCBI</td>
+      </tr>
+  {%endfor%}
+
+  {% for s in skipped_records%}
+  {% if s.reference == "yes"%}<tr bgcolor="#FF0000">{% else %}<tr>{% endif %}
+      <td>{{s.name}}</td>
+      <td>{{s.accession}}</td>
+      <td>{{s.version}}</td>
+      <td>{{s.taxid}}</td>
+      <td>{{s.reference}}</td>
+      <td>VEuPath accession value is not an INSDC pattern</td>
+  </tr>
+  {% endfor %}
+  </table>
+
+<script>
+function myFunction(column) {
+  var input, filter, table, tr, td, i, txtValue;
+  if (column == 2){input = document.getElementById("speciesInput");}
+  else if (column == 6){input = document.getElementById("categoryInput");}
+  else if (column == 9){input = document.getElementById("matchInput");}
+  else{}
+  
+  filter = input.value.toUpperCase();
+  table = document.getElementById("assemblyTable");
+  tr = table.getElementsByTagName("tr");
+  for (i = 0; i < tr.length; i++) {
+    td = tr[i].getElementsByTagName("td")[column];
+    if (td) {
+      txtValue = td.textContent || td.innerText;
+      if (txtValue.toUpperCase().indexOf(filter) > -1) {
+        tr[i].style.display = "";
+      } else {
+        tr[i].style.display = "none";
+      }
+    }       
+  }
+}
+</script>
+
+
+</body>
+</html>
