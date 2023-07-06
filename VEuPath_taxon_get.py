@@ -378,8 +378,30 @@ def checkAccessions( a : type [ncbi_accession] , b : type [ncbi_accession] ) -> 
             r.append('version mismatch')
     return r
             
+def read_file( fh_in:str)-> list :
+    """Read | delimited input file of assemblies of the format
+    
+    <NCBI assembly accession> , <name>, <reference yes|no>, <assembly version (int)>, <NCBI taxon id>
+    
+    e.g.
+    GCF_943734845.2|Anopheles funestus|yes|AfunF3.2|62324
+    
+    Args:
+        fh_in (str): input filepath
 
+    Returns:
+        list: array of assembly objects
+    """
+    ret = []
+    with open(fh_in, "r") as fh:
+        for line in fh:
+            l  =line.strip()
+            ta = l.rsplit('|')
+            
+            o = VPassembly( ta[0] , ta[1], ta[2], ta[3], ta[4] )
+            ret.append(o)
 
+    return ret
     
     
 def main():
@@ -388,6 +410,7 @@ def main():
     default_output = 'refstatus_report.html'
     parser.add_argument('--out', help='path of output report html file (default={default_output})', type=str, required=False )
     parser.add_argument('--test', help=f'run in test mode using internal data', action="store_true" )
+    parser.add_argument('--assemblies', help=f'path of assembly input file', type=str, required=False )
     parser.add_argument('--sampleN', help=f'number of retrieved assemblies to process', type=int, required=False )
     args = parser.parse_args()
 
@@ -400,6 +423,8 @@ def main():
         tst_strain = VPassembly( 'GCA_003013265.1', 'Trypanosoma congolense' , 'no', 'unknown', '1068625')
         assemblies = [ tst_busco, tst_strain]
         print("using internal test data with " + str(len(assemblies)) + " items")
+    elif args.assemblies :
+        assemblies = read_file( args.assemblies )
     else:
         assemblies = getVEuPathAssemblies()
         print( str(len(assemblies)) + " records retrieved from VEuPath")
