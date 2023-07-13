@@ -28,7 +28,7 @@ By default the list of NCBI assembly accessions is derived from the VEuPathDB we
 A user supplied list of assembly accessions can be provided with the --assemblies option. The file supplied
 to the --assemblies option must have 5 fields delimited with the "|" symbol and conform to the format
 
-<NCBI assembly accession>|<name>|<is reference yes|no>|<assembly version>|<NCBI taxon id>
+`<NCBI assembly accession>|<name>|<is reference yes|no>|<assembly version>|<NCBI taxon id>`
 
 e.g.
 
