@@ -425,6 +425,7 @@ def main():
         print("using internal test data with " + str(len(assemblies)) + " items")
     elif args.assemblies :
         assemblies = read_file( args.assemblies )
+        print( "read " + str(len(assemblies)) + " entries from file " + args.assemblies)
     else:
         assemblies = getVEuPathAssemblies()
         print( str(len(assemblies)) + " records retrieved from VEuPath")
