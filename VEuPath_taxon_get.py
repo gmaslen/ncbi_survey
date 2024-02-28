@@ -1,14 +1,16 @@
-import typing
+import csv
 import requests
-import json
+import logging
 import sys
 import re
 import argparse
 from jinja2 import FileSystemLoader, Environment
-from ncbi.datasets.metadata.genome import print_assembly_metadata_by_fields
 from ncbi.datasets.metadata.genome import get_assembly_metadata_by_asm_accessions
-from ncbi.datasets.metadata.genome import assembly_values_by_fields
 from ncbi.datasets.metadata.genome import get_assembly_metadata_by_taxon
+
+## unusued imports:
+# from ncbi.datasets.metadata.genome import print_assembly_metadata_by_fields
+# from ncbi.datasets.metadata.genome import assembly_values_by_fields
 
 class ncbi_accession:
     """generates an object based on an INSDC format assembly accession string. 
@@ -87,12 +89,13 @@ class busco:
     """handler class for NCBI BUSCO statistics
     NCBI BSCO scores are presented as floats not absolute counts (as is normal fro reporting)
     """    
+
     def __init__(self, stats ) -> None: 
-        self.completed = round(stats.get('complete'), 4)
-        self.single_copy = round(stats.get('single_copy'), 4)
-        self.duplicated = round(stats.get('duplicated'), 4)
-        self.fragmented = round(stats.get('fragmented'), 4)
-        self.missing = round(stats.get('missing'), 4)
+        self.complete = stats.get('complete', 0.0)
+        self.single_copy = stats.get('single_copy', 0.0)
+        self.duplicated = stats.get('duplicated', 0.0)
+        self.fragmented = stats.get('fragmented', 0.0)
+        self.missing = stats.get('missing', 0.0)
         self.db = stats.get('busco_lineage')
         self.version = stats.get('busco_ver')
         self.total = stats.get('total_count')
@@ -105,18 +108,18 @@ class busco:
         return self.busco
     def total(self) -> str:
         return self.total
-    def completed(self) -> str:
-        return self.completed
+    def complete(self) -> str:
+        return self.complete
     def single_copy(self) -> str:
         return self.single_copy
     def duplicated(self) -> str:
-        return self.duplicateded
+        return self.duplicated
     def fragmented(self) -> str:
         return self.fragmented
     def missing(self) -> str:
         return self.missing
     def __str__(self):
-        return f"{self.db} v{self.version} C:{self.completed}[S:{self.single_copy},D:{self.duplicated}],F:{self.fragmented},M:{self.missing},n:{self.total}"
+        return f"{self.db} v{self.version} C:{self.complete:.3f}[S:{self.single_copy:.3f},D:{self.duplicated:.3f}],F:{self.fragmented:.3f},M:{self.missing:.3f},n:{self.total}"
 
 class VPassembly:
     """generate object to store assembly details retrieved from VEuPath web service.
@@ -158,12 +161,11 @@ def getVEuPathAssemblies() -> list:
     base_url ="https://veupathdb.org/veupathdb/service/record-types/organism/searches/GenomeDataTypes/reports/standard"
     hm = base_url + '?reportConfig={"attributes":["primary_key","genome_source","genome_version","annotation_version","is_reference_strain","ncbi_tax_id"],"tables":[],"attributeFormat":"text"}'
 
-    x = requests.get(hm)
+    asm_objs = requests.get(hm)
     assemblies = []
 
-    if x.ok :
-        data= x.json()
-        taxids = 0
+    if asm_objs.ok:
+        data= asm_objs.json()
         rows = 0
     
         for l in data.get('records'):
@@ -177,39 +179,39 @@ def getVEuPathAssemblies() -> list:
             )
             assemblies.append(v)
         return assemblies
-    else:   
-        print( str(x.status_code) )
-        print( x.apparent_encoding )
-        req = x.request
+    else:
+        print( str(asm_objs.status_code) )
+        print( asm_objs.apparent_encoding )
+        req = asm_objs.request
         print(req.body)
 
-def getNCBIrecord( VPassembly: type [VPassembly] ) -> list :
-    """retrieve NCBI assembly record based on assembly accession, then use this to perform a lookup 
+def getNCBIrecord( Original_Accn: str, VPassembly: VPassembly ) -> list :
+    """Retrieve NCBI assembly record based on assembly accession, then use this to perform a lookup 
     of the linked NCBItaxon id and retrieve all possible assemblies for that taxon. This required as 
     the supplied assembly accession may be linked to a strain specific taxon id
 
     Args:
-        VPassembly (list): List of VPassembly objects containing INSDC GC[AF] accessions to retrieve
+        VPassembly: List of VPassembly objects containing INSDC GC[AF] accessions to retrieve
     """
     ret = []
-    GCAid = [ VPassembly.accession]
+    GCAid = [ VPassembly.accession ]
+
     for assembly in get_assembly_metadata_by_asm_accessions( GCAid ):
+        # print(assembly)
         NCBIgca = assembly.get('assembly').get('assembly_accession')
-        
-        vp_ref = VPassembly.reference
-        ncbi_ref = assembly.get('assembly').get('assembly_category')
+
         ncbi_tax_id = 'unknown' if not assembly.get('assembly').get('org').get('tax_id') else assembly.get('assembly').get('org').get('tax_id')
-        
-        org_assemblies = getAssembliesByTaxon(ncbi_tax_id)
+
+        org_assemblies, mismatch_version_meta = getAssembliesByTaxon(Original_Accn, ncbi_tax_id)
         arrayAnalysis = analyseAssemblies ( org_assemblies, NCBIgca)
-        
-        fields =  { 
-                   "num_assemblies": str( len( org_assemblies) ) , 
-                   "ncbi_accession": NCBIgca ,
-                   "vp_name": VPassembly.name , 
-                   "vp_version": VPassembly.version, 
+
+        fields =  {
+                   "num_assemblies": str( len( org_assemblies) ),
+                   "ncbi_accession": NCBIgca,
+                   "vp_name": VPassembly.name,
+                   "vp_version": VPassembly.version,
                    "vp_taxid": VPassembly.taxid,
-                   "ncbi_taxid=": ncbi_tax_id
+                   "ncbi_taxid": ncbi_tax_id
                    }
 
         for x in arrayAnalysis:
@@ -217,10 +219,10 @@ def getNCBIrecord( VPassembly: type [VPassembly] ) -> list :
             fcopy.update(x)
             ret.append(fcopy)
 
-    return ret                
+    return ret, mismatch_version_meta             
             
 def analyseAssemblies( org_assemblies : list, NCBIgca : str) -> list:
-    """checks for matches to supplied assembly accession in supplied array of 
+    """Checks for matches to supplied assembly accession in supplied array of 
     NCBI assembly ids for a taxon. Returns a list of list objects, each of which
     represents an individual NCBI assembly and an analysis of the type of match
     for that assembly. Possible values are.
@@ -233,35 +235,38 @@ def analyseAssemblies( org_assemblies : list, NCBIgca : str) -> list:
                                         the supplied assembly accession
     
     Args:
-        org_assemblies (list): list of NCBI assembly objects
-        NCBIgca (str): NCBI assembly string to match
+        org_assemblies: list of NCBI assembly objects
+        NCBIgca: NCBI assembly string to match
 
     Returns:
-        list:   list of dicts. Each list object summarises the NCBI assembly
-                and whether it matches the supplied assembly accession string
+        list of dicts. Each list object summarises the NCBI assembly
+        and whether it matches the supplied assembly accession string
     """    
+
     retdata =[]
-    
     for n in org_assemblies:
-            
-        cat = "" if not n.category else n.category 
+        
+        ## Checks if assembly has representative/reference genome status
+        cat = "" if not n.category else n.category
+
         report_string = "NCBI non-reference assembly"
         vpAcc = ncbi_accession(NCBIgca)
         ncbiAcc = ncbi_accession(n.accession)
-        report = checkAccessions( vpAcc , ncbiAcc)
+        report = checkAccessions(vpAcc, ncbiAcc)
             
         if cat == "representative genome":
             if len(report) > 0 :
-                report_string = ":".join(report)
+                report_string = "Acc mismatch [" + ", ".join(report) + "]"
             else:
-                report_string = 'matched reference assembly'
-        elif cat == "" :
+                report_string = 'User Acc matched reference assembly'
+        elif cat == "":
+            cat = "non-reference"
             if len(report) == 0:
-                report_string = 'matched non-reference assembly'
+                report_string = 'User Acc matched non-reference assembly'
     
         r= {
             "ncbi_accession": str(n.accession), 
-            "ncbi_category": str(n.category),
+            "ncbi_category": cat.title(),
             "ncbi_level": str(n.level),
             "ncbi_genes": str(n.genes),
             "ncbi_proteins": str(n.proteins), 
@@ -276,19 +281,21 @@ def analyseAssemblies( org_assemblies : list, NCBIgca : str) -> list:
         retdata.append(r)
     return retdata
 
-def getAssembliesByTaxon (ncbi_tax_id : str ) -> list:
+def getAssembliesByTaxon (Original_Accn: str, ncbi_tax_id: str ) -> list:
     """Retrieve all NCBI assemblies for a given NCBI taxon id
 
     Args:
-        ncbi_tax_id (str): NCBI taxon id to use for assembly list retieval
+        ncbi_tax_id: NCBI taxon id to use for assembly list retieval
 
     Returns:
-        list: list of ncbi_assembly objects for input taxon id
+        List of ncbi_assembly objects for input taxon id
     """    
     ncbi_obj = []
+    meta_version_mismatch = None
+
     for assembly in get_assembly_metadata_by_taxon( ncbi_tax_id ):
-        ass_accession = assembly.get('assembly').get('assembly_accession')
-        ass_category = assembly.get('assembly').get('assembly_category')
+        asm_accession = assembly.get('assembly').get('assembly_accession')
+        asm_category = assembly.get('assembly').get('assembly_category')
         ass_level = assembly.get('assembly').get('assembly_level')
         submitter = assembly.get('assembly').get('submitter')
         submission_date = assembly.get('assembly').get('submission_date')
@@ -299,20 +306,25 @@ def getAssembliesByTaxon (ncbi_tax_id : str ) -> list:
         total_genes = annotation.get('total_genes') if annotation.get('total_genes') else 0
         total_proteins = annotation.get('total_proteins') if annotation.get('total_proteins') else 0
         busco_obj = getBuscoStats( assembly )
-        if busco_obj :
-            print( str(ass_accession) + " has BUSCO scores " + str(busco_obj) )
-        ncbi_obj.append( ncbi_assembly( ass_accession, ass_category, ass_level, total_genes, total_proteins, submitter, submission_date, ncbi_tax_id, strain, busco_obj) )
-        
-    return ncbi_obj
+        if busco_obj:
+            print( str(asm_accession) + " has BUSCO scores " + str(busco_obj) )
+        ncbi_obj.append( ncbi_assembly( asm_accession, asm_category, ass_level, total_genes, total_proteins, submitter, submission_date, ncbi_tax_id, strain, busco_obj) )
+
+        # Testing whether or not api call has pulled back the query accession meta or a later asm version
+        if asm_accession.startswith(Original_Accn.split(".")[0]) and not asm_accession.endswith(Original_Accn.split(".")[1]):
+            logging.warning(f"Query accession {Original_Accn} not returned via API ! [Version obtained: {asm_accession}]")
+            meta_version_mismatch = [Original_Accn, asm_accession]
+    
+    return ncbi_obj, meta_version_mismatch
 
 def getAnnoMetadata( assembly:dict ) -> dict :
     """parse required assembly annotation data from NCBI assembly dict
 
     Args:
-        assembly (dict): NCBI assembly dictionary
+        assembly: NCBI assembly dictionary
 
     Returns:
-        dict: fields extracted from NCBI annotation_metadata node in the NCBI dictionary
+        Fields extracted from NCBI annotation_metadata node in the NCBI dictionary
     """  
     ret ={}
     if assembly.get('assembly').get('annotation_metadata'):
@@ -358,27 +370,28 @@ def getBuscoStats( assembly: dict ) -> dict :
     else:
         return None
 
-def checkAccessions( a : type [ncbi_accession] , b : type [ncbi_accession] ) -> list:
+def checkAccessions( user_supplied_acc : ncbi_accession , ncbi_acc : ncbi_accession ) -> list:
     """compare two INSDC format assembly accession strings and return list of errors detected
 
     Args:
-        a (type[ ncbi_accession]): ncbi_accession object
-        b (type[ ncbi_accession ]): ncbi_accession object
+        user_supplied_acc: User supplied assembly accession (ncbi_accession object)
+        ncbi_acc: Taxon ID derived alternate assembly accession (ncbi_accession object)
 
     Returns:
-        list: list of mismatch types detected between the two accessions. Empty set equals identity.
+        List of mismatch types detected between the two assembly accessions. Empty set equals accession identity.
     """    
-    r=[]
-    if ( a != b):
-        if( a.source != b.source):
-            r.append( 'source mismatch')
-        if( a.id != b.id ):
-            r.append('id mismatch')
-        if( a.version != b.version ):
-            r.append('version mismatch')
-    return r
+    accession_mismatch=[]
+
+    if ( user_supplied_acc != ncbi_acc):
+        if( user_supplied_acc.source != ncbi_acc.source):
+            accession_mismatch.append('Source') # GenBank Vs RefSeq mismatch
+        if( user_supplied_acc.id != ncbi_acc.id ):
+            accession_mismatch.append('ID') # Assembly GCA/GFC ID GC{CF}_ id -> 'XXXXXXXXX'
+        if( user_supplied_acc.version != ncbi_acc.version ):
+            accession_mismatch.append('Version') # Assembly version mismatch
+    return accession_mismatch
             
-def read_file( fh_in:str)-> list :
+def read_assembly_queries(fh_in:str)-> list :
     """Read | delimited input file of assemblies of the format
     
     <NCBI assembly accession> , <name>, <reference yes|no>, <assembly version (int)>, <NCBI taxon id>
@@ -387,10 +400,10 @@ def read_file( fh_in:str)-> list :
     GCF_943734845.2|Anopheles funestus|yes|AfunF3.2|62324
     
     Args:
-        fh_in (str): input filepath
+        fh_in: input filepath
 
     Returns:
-        list: array of assembly objects
+        lList of array of assembly objects
     """
     ret = []
     with open(fh_in, "r") as fh:
@@ -402,80 +415,206 @@ def read_file( fh_in:str)-> list :
             ret.append(o)
 
     return ret
+
+def tsvAssemblyReport( output_file: str, asm_records: list, match_type: bool):
+    """A function to iterate over all assembly match records returned from a successfully
+    user accession lookup. Matches include user supplied assembly accession hits and also
+    non-user qeury asm accns identified via NCBI taxon_id lookup.
+
+    Args:
+        output_file: Default/user specified output file prefix
+        asm_records: Set of all asm record lookups
+        match_type: Bool setter for result outfile suffix, True = user accession matched
+    """
+
+    header_list = ['Total assemblies','NCBI accession','VEuPath Name','VEuPath version',
+                   'VEuPath Taxon ID','NCBI Taxon ID','NCBI Asm Status','Assembly level',
+                   'NCBI Total Genes','NCBI Total Proteins','NCBI Source','Submission date',
+                   'NCBI Strain','NCBI Match','BUSCO']
+
+    # Define appropriate outfile suffix depending on match_type result set
+    if match_type:
+        query_acc_output_tsv = f"{output_file}.TargetAccnQueries.tsv"
+    else:
+        query_acc_output_tsv = f"{output_file}.OtherAssociated-asms-on-taxid.tsv"
+
+    with open(query_acc_output_tsv, 'w+') as tsv_out:
+        writer = csv.writer(tsv_out, delimiter='\t', lineterminator='\n')
+        writer.writerow(header_list)
+
+        #Iterate over all assemblies (>=1) result sets & write individual accession result tsv
+        for asm_matched in asm_records:
+            writer.writerow(asm_matched.values())
+
+        tsv_out.close()
+
+def categorize_results (asm_set: list) -> list:
+    """Function to separate out sets of results, based on whether or not a specific assembly
+    accession was input by the user. Matched set (user query accessions) and
+    unmatched (other associated taxon asm accessions)
     
+    Args:
+        asm_set: Set of assembly result sets passed as [list of {dicts,..}]
     
-def main():
+    Returns:
+        matched: Set of asm query accessions matched to reference assembly
+        unmatched: Set of asm query accessions not matched to reference
+        set_of_references: List of user query accession(s) and associated assembly hit
+    """
+    matched = []
+    unmatched = []
+    set_of_references = []
+
+    #Iterate over all assemblies (>=1) result sets & write individual accession result tsv
+    for master_asm_index in range(len(asm_set)):
+        for asm in asm_set[master_asm_index]:
+
+            match_type = asm.get('ncbi_match')
+            ncbi_match = re.search("[Uu]ser Acc", match_type)
+            species = asm.get('vp_name')
+            asm_accn = asm.get('ncbi_accession')
+            ncbi_status = asm.get('ncbi_category')
+            reference_or_not = re.search("Representative Genome", ncbi_status)
+
+            if reference_or_not and reference_or_not.group():
+                have_reference = True
+            else:
+                have_reference = False
+
+            if ncbi_match and have_reference == True:
+                reference = [species, asm_accn, "Accn matches current reference"]
+                set_of_references.append(reference)
+                matched.append(asm)
+
+            if ncbi_match and have_reference == False:
+                reference = [species, asm_accn, "Non-reference"]
+                set_of_references.append(reference)
+                matched.append(asm)
+            else:
+                unmatched.append(asm)
+
+    return matched, unmatched, set_of_references
+
+def htmlAssemblyReport( Output_file: str, ASMlist: list, Failed: list, Skipped: list ):
+    """Print HTML table summary of retrieved assembly records based on set of input
+    user defined assembly accessions (INSDC accessions i.e. GCA_/GCF_)
+
+    Args:
+        Output_file: Name of output file (default: 'refstatus_report.html')
+        ASMlist: List of assembly records retrieved from NCBI
+        Failed: List of assemblies without NCBI records based on provided accession. 
+        Skipped: List of assemblies with improperly defined INSDC accession.
+    """    
+    fh = open( Output_file, "w")
+    environment = Environment(loader=FileSystemLoader("templates/"))
+    template = environment.get_template("base.html")
+    context = { "record": ASMlist, "failed_records": Failed, "skipped_records": Skipped }
+    fh.write( template.render(context) )
+    fh.close()
+
+## Main runnable starts here
+if __name__ == '__main__':
+
+    skipped = [] 
+    allrecords = []
+    failed = []
+    mismatched_meta = []
+    valid_accessions={}
+    default_output = 'refstatus_report.html'
     
     parser = argparse.ArgumentParser(description='Generate report of VEuPath and NCBI/Refseq assembly overlaps.')
-    default_output = 'refstatus_report.html'
-    parser.add_argument('--out', help='path of output report html file (default={default_output})', type=str, required=False )
+    parser.add_argument('--out', help='Name of output report html file.', default=default_output, type=str, required=False )
     parser.add_argument('--test', help=f'run in test mode using internal data', action="store_true" )
     parser.add_argument('--assemblies', help=f'path of assembly input file', type=str, required=False )
     parser.add_argument('--sampleN', help=f'number of retrieved assemblies to process', type=int, required=False )
     args = parser.parse_args()
 
+    # Check proper formatting of user output file
     if args.out:
-        default_output = args.out
-    
+        suffix_match = re.search(".html", args.out)
+        if suffix_match:
+            default_output = args.out
+            file_prefix = default_output.split(".")
+        else:
+            default_output = args.out + ".html"
+            file_prefix = args.out
+
     if args.test:
         #array of test data for debugging   
         tst_busco = VPassembly( 'GCF_943734845.2', 'Anopheles funestus', 'yes', 'AfunF3.2', '62324' )
         tst_strain = VPassembly( 'GCA_003013265.1', 'Trypanosoma congolense' , 'no', 'unknown', '1068625')
         assemblies = [ tst_busco, tst_strain]
-        print("using internal test data with " + str(len(assemblies)) + " items")
+        print("Using internal test data with " + str(len(assemblies)) + " items")
     elif args.assemblies :
-        assemblies = read_file( args.assemblies )
-        print( "read " + str(len(assemblies)) + " entries from file " + args.assemblies)
+        assemblies = read_assembly_queries( args.assemblies )
+        print( "Discovered " + str(len(assemblies)) + " user assembly queries in file " + args.assemblies + "\n\n")
     else:
         assemblies = getVEuPathAssemblies()
-        print( str(len(assemblies)) + " records retrieved from VEuPath")
-    
-    skipped = [] 
-    allrecords = []
-    failed = []
-    
+        print( str(len(assemblies)) + " records retrieved from VEuPath!")
 
-    
-#use assemblies[:n] to restrict processing to n entries while testing
-    
+    #use assemblies[:n] to restrict processing to n entries while testing
     if args.sampleN :
         subsample = args.sampleN
-        print( "processing " + str(subsample) + " of " + str(len(assemblies)) + " records" )
+        print( "Processing with sub-sample enabled. Operating over " + str(subsample) + " of " + str(len(assemblies)) + " original input assembly queries from file " + str(args.assemblies) )
     else:
         subsample = len(assemblies)
-        
-    for a in assemblies[:subsample]:
 
-        if re.search( "GC[AF]_" , str(a.accession) ) :
-            r = getNCBIrecord( a )
-            if len(r) == 0:
-                failed.append(a)
-            else:
-                allrecords.append(r)
+    ## Parse and store information on valid GCA/GCF accessions
+    for assembly in assemblies[:subsample]:
+
+        if re.search( "GC[AF]_" , str(assembly.accession) ):
+            accession = str(assembly.accession)
+            valid_accessions[accession] = assembly
         else:
-            print("Invalid genome accession format for entry - skipping - ")
-            print( a )
-            skipped.append(a)
+            print(f"Invalid genome accession format for entry - skipping - {assembly}")
+            skipped.append(assembly)
+
+    # Overwrite file of mismathed asm version as as reult of api return
+    with open(f"{file_prefix}.api_return_version_mismatched.tsv", 'w') as tsv_out:
+        tsv_out.write("#Species\tQuery Accn\tCurrent NCBI Version\n")    
+    tsv_out.close
     
-    print("Total skipped records = " + str(len(skipped)) )
-    print("Total failed retrieval records = " + str(len(failed)) )
+    ## Iterate on valid asm accessions
+    for valid_assembly_accn, assembly_vp_object in valid_accessions.items():
+        species_name = str(assembly_vp_object.name)
+        print(f"\nProcessing: [{species_name}] - Accn [{valid_assembly_accn}]")
+
+        asm_record, mismatched_meta = getNCBIrecord(valid_assembly_accn, assembly_vp_object)
+
+        if len(asm_record) == 0:
+            failed.append(assembly_vp_object)
+        else:
+            allrecords.append(asm_record)
+
+        # check for mismatched meta on api call
+        if mismatched_meta is not None:
+            mismatched_meta.insert(0,f"{species_name}")
+            with open(f"{file_prefix}.api_return_version_mismatched.tsv", 'a') as tsv_out:
+                writer = csv.writer(tsv_out, delimiter='\t', lineterminator='\n')
+                writer.writerow(mismatched_meta)
+            tsv_out.close
+
             
-    htmlAssemblyReport( default_output, allrecords, failed, skipped)
+    # Split assembly result sets to isolate user query accessions
+    user_matched, user_unmatched, reference_asm_set = categorize_results(allrecords)
+
+    # Summarize output across all user defined accessions with respect to their representative status
+    with open(f"{file_prefix}.Asm-Reference-status.tsv", 'w') as tsv_out:
+        tsv_out.write("#Species\tQuery Accn\tReference Status\n")
+        
+        for user_assemblies in reference_asm_set:
+            writer = csv.writer(tsv_out, delimiter='\t', lineterminator='\n')
+            writer.writerow(user_assemblies)
+    tsv_out.close
+
+    # Write output of analysis to HTML output file
+    htmlAssemblyReport(default_output, allrecords, failed, skipped)
     
-def htmlAssemblyReport( fh_out: str, ASMlist: list, failed: list, skipped: list ):
-    """Print HTML table summary of retrieved assembly records
+    # For both asm result sets write to TSV    
+    tsvAssemblyReport(file_prefix, user_matched, True)
+    tsvAssemblyReport(file_prefix, user_unmatched, False)
 
-    Args:
-        ASMlist (list): list of assembly data hashes retrieved
-    """    
-    fh = open( fh_out, "w")
-    environment = Environment(loader=FileSystemLoader("templates/"))
-    template = environment.get_template("base.html")
-    context = { "record": ASMlist, "failed_records": failed, "skipped_records": skipped }
-    fh.write( template.render(context) )
-    fh.close()
-           
-
-if __name__ == '__main__':
-    main()
-    sys.exit(0)
+    print("\nTotal skipped records = " + str(len(skipped)) )
+    print("Total failed retrieval records = " + str(len(failed)) )
+    
+sys.exit(0)
