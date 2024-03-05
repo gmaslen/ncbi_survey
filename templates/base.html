@@ -94,27 +94,38 @@
 
 <table id="assemblyTable">
 <tr class="header">
-    <th style="width:10%;">Total assemblies</th>
-    <th style="width:10%;">NCBI accession</th>
+    <th style="width:5%">Total assemblies</th>
+    <!-- <th style="width:10%">Special test</th> -->
+    <th>NCBI accession</th>
     <th style="width:10%;">VEuPath name</th>
-    <th style="width:10%;">VEuPath version</th>
-    <th style="width:10%;">VEuPath taxid</th>
-    <th style="width:10%;">NCBI taxid</th>
-    <th style="width:10%;">NCBI strain</th>
-    <th style="width:10%;">NCBI category</th>
-    <th style="width:10%;">NCBI assembly level</th>
-    <th style="width:10%;">NCBI total genes</th>
-    <th style="width:10%;">NCBI total proteins</th>
-    <th style="width:10%;">NCBI BUSCO stats</th>
-    <th style="width:10%;">NCBI source</th>
-    <th style="width:10%;">NCBI submitted</th>
+    <th>VEuPath version</th>
+    <th>VEuPath taxid</th>
+    <th>NCBI taxid</th>
+    <th>NCBI strain</th>
+    <th>NCBI Asm Status</th>
+    <th>NCBI assembly level</th>
+    <th>NCBI total genes</th>
+    <th>NCBI total proteins</th>
+    <th>NCBI BUSCO stats</th>
+    <th>NCBI source</th>
+    <th>NCBI submitted</th>
     <th style="width:10%;">NCBI match type</th>
 </tr>
 {% for rl in record%}
     {% for r in rl %}
-    {% if r.ncbi_category == "representative genome"%}<tr bgcolor="#80dfff">{% else %}<tr>{% endif %}
+    <!-- {% if r.ncbi_category == "Representative Genome"%}<tr bgcolor="#80dfff">{% else %}<tr>{% endif %} -->
+      {% if r.ncbi_category == "Representative Genome" and r.ncbi_match == "User Acc matched reference assembly"%}
+      <tr bgcolor="#7fff00">
+      {% elif r.ncbi_category == "Non-Reference" and r.ncbi_match == "User Acc matched non-reference assembly"%}
+      <tr bgcolor="#f89c4c">
+      {% elif r.ncbi_category == "Representative Genome" and r.ncbi_match.count('mismatch')%}
+      <tr bgcolor="#80dfff">
+      {% else %}
+      <tr>
+      {% endif %}
     
         <td>{{r.num_assemblies}}</td>
+        <!-- <td>{{r.specical_categroy}}</td> -->
         <td><a href="https://www.ncbi.nlm.nih.gov/assembly/{{r.ncbi_accession}}">{{r.ncbi_accession}}</a></td>
         <td>{{r.vp_name}}</td>
         <td>{{r.vp_version}}</td>
@@ -128,9 +139,9 @@
         <td>{{r.ncbi_busco}}</td>
         <td>{{r.ncbi_source}}</td>
         <td>{{r.ncbi_submitted}}</td>
-    {% if r.ncbi_match == "matched reference assembly"%}<td bgcolor="#7fff00">{{r.ncbi_match}}</td>
-    {% elif r.ncbi_match == "matched non-reference assembly"%}<td bgcolor="#90ee90">{{r.ncbi_match}}</td>
-    {% elif r.ncbi_match.count('mismatch')%}<td bgcolor="#FF0000">{{r.ncbi_match}}</td>
+    {% if r.ncbi_match == "User Acc matched reference assembly"%}<td bgcolor="#7fff00">{{r.ncbi_match}}</td>
+    {% elif r.ncbi_match == "User Acc matched non-reference assembly"%}<td bgcolor="#f89c4c">{{r.ncbi_match}}</td>
+    {% elif r.ncbi_match.count('Acc mismatch')%}<td bgcolor="#FF0000">{{r.ncbi_match}}</td>
     {% else %}<td bgcolor="#FFFFFF">{{r.ncbi_match}}</td>
     {% endif %}
     </tr>
@@ -143,12 +154,12 @@
 
 <table id="failureTable">
   <tr class="header">
-      <th style="width:10%;">VEuPath name</th>
-      <th style="width:10%;">VEuPath accession</th>
-      <th style="width:10%;">VEuPath version</th>
-      <th style="width:10%;">VEuPath taxid</th>
-      <th style="width:10%;">VEuPath reference</th>
-      <th style="width:10%;">Failure reason</th>
+      <th style="width:10%">VEuPath name</th>
+      <th style="width:10%">VEuPath accession</th>
+      <th style="width:10%">VEuPath version</th>
+      <th style="width:10%">VEuPath taxid</th>
+      <th style="width:10%">VEuPath reference</th>
+      <th style="width:10%">Failure reason</th>
   </tr>
   {% for f in failed_records%}
       {% if f.reference == "yes"%}<tr bgcolor="#FF0000">{% else %}<tr>{% endif %}
