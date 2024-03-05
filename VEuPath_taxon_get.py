@@ -678,7 +678,7 @@ if __name__ == "__main__":
         suffix_match = re.search(".html", args.out)
         if suffix_match:
             default_output = args.out
-            file_prefix = default_output.split(".")
+            file_prefix = default_output.split(".")[0]
         else:
             default_output = args.out + ".html"
             file_prefix = args.out
